@@ -1,1 +1,826 @@
 
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>旅遊小幫手</title>
+    
+    <!-- Tailwind CSS (用於美觀和響應式設計) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Vue 3 (用於應用程式邏輯和狀態管理) -->
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Google Fonts (Noto Sans TC) -->
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Noto Sans TC', sans-serif;
+            background-color: #f3f4f6; /* 淺灰色背景 */
+            -webkit-tap-highlight-color: transparent; /* 移除點擊高亮 */
+        }
+        
+        /* 隱藏滾動條但保持功能 (垂直方向) */
+        .hide-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .hide-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* 水平捲軸美化 */
+        .custom-scrollbar {
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch; 
+        }
+        .custom-scrollbar::-webkit-scrollbar {
+            height: 4px;
+        }
+        .custom-scrollbar::-webkit-scrollbar-track {
+            background: transparent; 
+        }
+        .custom-scrollbar::-webkit-scrollbar-thumb {
+            background-color: #e2e8f0; 
+            border-radius: 10px;
+        }
+
+        /* 模擬 App 轉場動畫 */
+        .fade-enter-active, .fade-leave-active {
+            transition: opacity 0.2s ease;
+        }
+        .fade-enter-from, .fade-leave-to {
+            opacity: 0;
+        }
+
+        /* Modal 動畫 (從底部滑入) */
+        @keyframes slideUp {
+            from { transform: translateY(100%); opacity: 0.5; }
+            to { transform: translateY(0); opacity: 1; }
+        }
+        .animate-\[slideUp\_0\.3s\_ease-out\] {
+            animation: slideUp 0.3s ease-out forwards;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 h-screen w-screen overflow-hidden text-gray-800">
+
+    <div id="app" class="h-full flex flex-col relative max-w-md mx-auto bg-white shadow-2xl sm:border-x sm:border-gray-200">
+
+        <!-- 頂部標題列 -->
+        <header class="bg-indigo-600 text-white pt-10 pb-4 px-6 shadow-md z-10 flex justify-between items-center shrink-0">
+            <div>
+                <h1 class="text-xl font-bold tracking-wide"><i class="fa-solid fa-plane-departure mr-2"></i>旅程小幫手</h1>
+                <p class="text-indigo-200 text-xs mt-1">輕鬆規劃，快樂分帳</p>
+            </div>
+            <!-- 重置資料按鈕 -->
+            <button @click="resetData" class="text-xs bg-indigo-500 hover:bg-indigo-700 px-3 py-1 rounded-full transition">
+                重置
+            </button>
+        </header>
+
+        <!-- 主要內容區域 (可滾動) -->
+        <main class="flex-1 overflow-y-auto hide-scrollbar bg-gray-50 pb-24 relative">
+            
+            <!-- Tab 1: 行程表 -->
+            <transition name="fade" mode="out-in">
+                <div v-if="currentTab === 'itinerary'" key="itinerary" class="p-4 space-y-6">
+                    
+                    <!-- 日期導航欄 -->
+                    <div class="flex items-center gap-2">
+                        <!-- 天數捲動列表 -->
+                        <div ref="dayContainer" class="flex-1 flex gap-3 pb-2 custom-scrollbar overflow-x-auto">
+                            <button 
+                                v-for="(day, index) in itineraryDays" 
+                                :key="index"
+                                @click="currentDayIndex = index"
+                                :class="currentDayIndex === index ? 'bg-indigo-600 text-white shadow-lg scale-105' : 'bg-white text-gray-500 border border-gray-200'"
+                                class="flex-shrink-0 px-5 py-2 rounded-full text-sm font-bold transition-all duration-300 whitespace-nowrap"
+                            >
+                                第 {{ index + 1 }} 天
+                            </button>
+                            <!-- 捲動列表中的單日新增按鈕 -->
+                            <button @click="addDay" class="flex-shrink-0 px-4 py-2 rounded-full border border-dashed border-indigo-300 text-indigo-500 text-sm font-bold bg-indigo-50 hover:bg-indigo-100 transition whitespace-nowrap">
+                                <i class="fa-solid fa-plus mr-1"></i>天
+                            </button>
+                            <div class="w-1 flex-shrink-0"></div> <!-- 填補空間 -->
+                        </div>
+
+                        <!-- 快速切換總覽按鈕 (批量/跳轉功能入口) -->
+                        <button @click="showDaySelectorModal = true" class="flex-shrink-0 w-10 h-10 bg-white border border-gray-200 rounded-full text-indigo-600 shadow-sm flex items-center justify-center hover:bg-gray-50 active:bg-gray-100 transition z-10 mb-2">
+                            <i class="fa-solid fa-table-cells text-lg"></i>
+                        </button>
+                    </div>
+
+                    <!-- 行程列表 (時間軸樣式) -->
+                    <div class="relative space-y-4">
+                        <!-- 垂直線 -->
+                        <div class="absolute left-4 top-2 bottom-2 w-0.5 bg-gray-200"></div>
+
+                        <div v-if="currentDayItems.length === 0" class="text-center py-10 text-gray-400">
+                            <i class="fa-regular fa-calendar-plus text-4xl mb-3"></i>
+                            <p>這一天還沒有行程喔！</p>
+                            <button @click="showAddItemModal = true" class="mt-4 text-indigo-600 font-bold text-sm">點擊新增</button>
+                        </div>
+
+                        <div v-for="(item, idx) in currentDayItems" :key="item.id" class="relative pl-10 group">
+                            <!-- 時間點點 -->
+                            <div class="absolute left-[10px] top-4 w-3 h-3 bg-indigo-500 rounded-full border-2 border-white shadow transform -translate-x-1/2 z-10"></div>
+                            
+                            <div class="bg-white p-4 rounded-2xl shadow-sm border border-gray-100 active:scale-95 transition-transform duration-100">
+                                <div class="flex justify-between items-start mb-2">
+                                    <span class="inline-block bg-indigo-50 text-indigo-700 text-xs px-2 py-1 rounded font-bold">
+                                        {{ item.time }}
+                                    </span>
+                                    <div class="flex gap-3 text-gray-400">
+                                        <button @click="editItem(item)" class="hover:text-indigo-600"><i class="fa-solid fa-pen"></i></button>
+                                        <button @click="deleteItem(item.id)" class="hover:text-red-500"><i class="fa-solid fa-trash"></i></button>
+                                    </div>
+                                </div>
+                                <h3 class="font-bold text-lg text-gray-800 leading-tight">{{ item.title }}</h3>
+                                <div class="flex items-center text-gray-500 text-sm mt-1" v-if="item.location">
+                                    <i class="fa-solid fa-location-dot mr-1.5 text-red-400"></i>
+                                    {{ item.location }}
+                                </div>
+                                <div class="mt-3 pt-3 border-t border-gray-100 flex gap-2">
+                                    <button @click="openMap(item.location)" class="flex-1 bg-gray-100 text-gray-600 py-1.5 rounded-lg text-sm font-medium hover:bg-gray-200 transition">
+                                        <i class="fa-solid fa-map mr-1"></i> 導航
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 懸浮新增行程按鈕 -->
+                    <button @click="openAddModal" class="fixed bottom-24 right-6 w-14 h-14 bg-indigo-600 text-white rounded-full shadow-xl flex items-center justify-center text-2xl hover:bg-indigo-700 active:scale-90 transition-all z-20">
+                        <i class="fa-solid fa-plus"></i>
+                    </button>
+                </div>
+            </transition>
+
+            <!-- Tab 2: 分帳系統 -->
+            <transition name="fade" mode="out-in">
+                <div v-if="currentTab === 'money'" key="money" class="p-4 space-y-6">
+                    
+                    <!-- 總覽卡片 -->
+                    <div class="bg-gradient-to-br from-emerald-500 to-teal-600 rounded-2xl p-5 text-white shadow-lg relative overflow-hidden">
+                        <i class="fa-solid fa-money-bill-wave absolute -right-4 -bottom-4 text-9xl opacity-10"></i>
+                        <div class="relative z-10">
+                            <p class="text-emerald-100 text-sm mb-1">總支出</p>
+                            <h2 class="text-4xl font-bold mb-4">${{ totalExpense }}</h2>
+                            <div class="flex gap-2">
+                                <button @click="showManagePeopleModal = true" class="bg-white/20 hover:bg-white/30 backdrop-blur px-3 py-1.5 rounded-lg text-xs font-medium transition">
+                                    <i class="fa-solid fa-users mr-1"></i> 管理成員 ({{ people.length }})
+                                </button>
+                                <button @click="showSettlementModal = true" class="bg-white text-emerald-600 px-3 py-1.5 rounded-lg text-xs font-bold shadow transition">
+                                    <i class="fa-solid fa-calculator mr-1"></i> 計算結算
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 支出紀錄列表 -->
+                    <div>
+                        <div class="flex justify-between items-center mb-3 px-1">
+                            <h3 class="font-bold text-gray-700">支出明細</h3>
+                            <button @click="openAddExpenseModal" class="text-sm text-emerald-600 font-bold">
+                                + 記一筆
+                            </button>
+                        </div>
+
+                        <div v-if="expenses.length === 0" class="text-center py-8 bg-white rounded-xl shadow-sm border border-gray-100">
+                            <p class="text-gray-400 text-sm">目前沒有任何支出紀錄</p>
+                        </div>
+
+                        <div class="space-y-3">
+                            <div v-for="expense in sortedExpenses" :key="expense.id" class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex justify-between items-center">
+                                <div class="flex items-center gap-3">
+                                    <div class="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center font-bold text-lg">
+                                        {{ expense.payer[0] }}
+                                    </div>
+                                    <div>
+                                        <h4 class="font-bold text-gray-800">{{ expense.title }}</h4>
+                                        <p class="text-xs text-gray-500">
+                                            <span class="font-medium text-emerald-600">{{ expense.payer }}</span> 付款
+                                            <span class="mx-1">•</span> {{ formatDate(expense.date) }}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <div class="font-bold text-lg text-gray-800">${{ expense.amount }}</div>
+                                    <button @click="deleteExpense(expense.id)" class="text-gray-300 hover:text-red-500 text-xs p-1">
+                                        <i class="fa-solid fa-trash"></i>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </transition>
+
+            <!-- Tab 3: 工具/設定 -->
+            <transition name="fade" mode="out-in">
+                <div v-if="currentTab === 'tools'" key="tools" class="p-4 space-y-4">
+                    <h3 class="font-bold text-gray-800 text-lg mb-2">實用工具</h3>
+                    
+                    <div class="grid grid-cols-2 gap-4">
+                        <a href="https://www.google.com/maps" target="_blank" class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2 active:bg-gray-50 transition">
+                            <i class="fa-solid fa-map-location-dot text-3xl text-indigo-500"></i>
+                            <span class="font-medium text-sm">Google Maps</span>
+                        </a>
+                         <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center justify-center gap-2">
+                            <i class="fa-solid fa-cloud-sun text-3xl text-orange-400"></i>
+                            <span class="font-medium text-sm">當地天氣 (Coming Soon)</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-indigo-50 p-4 rounded-xl mt-6 border border-indigo-100">
+                        <h4 class="font-bold text-indigo-800 mb-2">關於此 App</h4>
+                        <p class="text-sm text-indigo-600 leading-relaxed">
+                            這是一個純前端運行的網頁應用。您的資料只會儲存在這台手機的瀏覽器中，清除快取可能會遺失資料。建議在旅行結束後截圖保存分帳結果。
+                        </p>
+                    </div>
+                </div>
+            </transition>
+
+        </main>
+
+        <!-- 底部導航欄 -->
+        <nav class="bg-white border-t border-gray-200 flex justify-around items-center h-20 pb-2 absolute bottom-0 w-full max-w-md z-30 shadow-[0_-5px_15px_rgba(0,0,0,0.05)]">
+            <button @click="currentTab = 'itinerary'" class="flex flex-col items-center justify-center w-full h-full transition-colors" :class="currentTab === 'itinerary' ? 'text-indigo-600' : 'text-gray-400'">
+                <i class="fa-solid fa-list-check text-xl mb-1"></i>
+                <span class="text-[10px] font-medium">行程</span>
+            </button>
+            <button @click="currentTab = 'money'" class="flex flex-col items-center justify-center w-full h-full transition-colors" :class="currentTab === 'money' ? 'text-emerald-600' : 'text-gray-400'">
+                <i class="fa-solid fa-sack-dollar text-xl mb-1"></i>
+                <span class="text-[10px] font-medium">分帳</span>
+            </button>
+            <button @click="currentTab = 'tools'" class="flex flex-col items-center justify-center w-full h-full transition-colors" :class="currentTab === 'tools' ? 'text-indigo-600' : 'text-gray-400'">
+                <i class="fa-solid fa-compass text-xl mb-1"></i>
+                <span class="text-[10px] font-medium">工具</span>
+            </button>
+        </nav>
+
+        <!-- Modals (彈出視窗) -->
+        
+        <!-- 1. 快速切換天數 Modal (網格視圖 + 批量操作) -->
+        <div v-if="showDaySelectorModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl max-h-[85vh] flex flex-col">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-bold text-gray-800">行程總覽</h3>
+                    <button @click="showDaySelectorModal = false" class="text-gray-400 hover:text-gray-600"><i class="fa-solid fa-times text-lg"></i></button>
+                </div>
+
+                <!-- 效率工具區 -->
+                <div class="bg-indigo-50 rounded-xl p-3 mb-4 space-y-3 border border-indigo-100">
+                    <!-- 跳轉功能 -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-bold text-indigo-400 w-10 shrink-0">前往</span>
+                        <input type="number" v-model.number="jumpDayInput" placeholder="Day" class="flex-1 min-w-0 bg-white border border-indigo-200 rounded-lg py-1.5 px-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 text-center font-bold text-indigo-600">
+                        <button @click="jumpToDay" class="bg-indigo-600 text-white px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 hover:bg-indigo-700 transition">GO</button>
+                    </div>
+                    <!-- 批量新增功能 -->
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs font-bold text-indigo-400 w-10 shrink-0">新增</span>
+                        <input type="number" v-model.number="daysToAddInput" placeholder="幾天?" class="flex-1 min-w-0 bg-white border border-indigo-200 rounded-lg py-1.5 px-3 text-sm outline-none focus:ring-2 focus:ring-indigo-500 text-center font-bold text-indigo-600">
+                        <button @click="addMultipleDays" class="bg-white text-indigo-600 border border-indigo-200 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 hover:bg-indigo-50 transition">
+                            <i class="fa-solid fa-plus mr-1"></i>批量
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="overflow-y-auto custom-scrollbar flex-1 pr-1">
+                    <div class="grid grid-cols-4 gap-3 pb-2">
+                        <button 
+                            v-for="(day, index) in itineraryDays" 
+                            :key="index"
+                            @click="selectDay(index)"
+                            :class="currentDayIndex === index ? 'bg-indigo-600 text-white shadow-md ring-2 ring-indigo-200' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'"
+                            class="aspect-square rounded-xl font-bold text-sm flex flex-col items-center justify-center transition relative"
+                        >
+                            <span class="text-[10px] opacity-70">Day</span>
+                            <span>{{ index + 1 }}</span>
+                            <!-- 如果該天有行程，顯示一個小點點 -->
+                            <div v-if="day.length > 0" class="absolute top-2 right-2 w-1.5 h-1.5 rounded-full" :class="currentDayIndex === index ? 'bg-white' : 'bg-indigo-400'"></div>
+                        </button>
+                        
+                        <!-- 網格中的單日新增按鈕 -->
+                        <button 
+                            @click="addDay" 
+                            class="aspect-square rounded-xl border-2 border-dashed border-gray-300 text-gray-400 font-bold flex items-center justify-center hover:bg-gray-50 hover:border-indigo-300 hover:text-indigo-400 transition"
+                        >
+                            <i class="fa-solid fa-plus text-xl"></i>
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. 新增行程 Modal -->
+        <div v-if="showAddItemModal" class="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4 backdrop-blur-sm">
+            <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-[slideUp_0.3s_ease-out]">
+                <h3 class="text-xl font-bold mb-4">{{ isEditing ? '編輯行程' : '新增行程' }}</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-xs text-gray-500 font-bold block mb-1">時間</label>
+                        <input type="time" v-model="tempItem.time" class="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-500 font-bold block mb-1">標題</label>
+                        <input type="text" v-model="tempItem.title" placeholder="例如：吃拉麵" class="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-indigo-500">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-500 font-bold block mb-1">地點 (用於導航)</label>
+                        <div class="relative">
+                            <i class="fa-solid fa-map-pin absolute left-3 top-3.5 text-gray-400"></i>
+                            <input type="text" v-model="tempItem.location" placeholder="輸入地點名稱" class="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 pl-9 outline-none focus:ring-2 focus:ring-indigo-500">
+                        </div>
+                    </div>
+                    <div class="flex gap-3 mt-6">
+                        <button @click="closeModal" class="flex-1 py-3 text-gray-500 font-bold bg-gray-100 rounded-xl">取消</button>
+                        <button @click="saveItem" class="flex-1 py-3 text-white font-bold bg-indigo-600 rounded-xl shadow-lg shadow-indigo-200">儲存</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. 新增支出 Modal -->
+        <div v-if="showAddExpenseModal" class="fixed inset-0 bg-black/50 z-50 flex items-end sm:items-center justify-center p-4 backdrop-blur-sm">
+            <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-[slideUp_0.3s_ease-out]">
+                <h3 class="text-xl font-bold mb-4">記一筆</h3>
+                <div class="space-y-4">
+                    <div>
+                        <label class="text-xs text-gray-500 font-bold block mb-1">項目名稱</label>
+                        <input type="text" v-model="tempExpense.title" placeholder="例如：晚餐" class="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-emerald-500">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-500 font-bold block mb-1">金額</label>
+                        <input type="number" v-model="tempExpense.amount" placeholder="0" class="w-full bg-gray-50 border border-gray-200 rounded-lg p-3 outline-none focus:ring-2 focus:ring-emerald-500 text-lg font-bold">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-500 font-bold block mb-1">誰先付的？</label>
+                        <div class="flex flex-wrap gap-2">
+                            <button 
+                                v-for="person in people" 
+                                :key="person"
+                                @click="tempExpense.payer = person"
+                                :class="tempExpense.payer === person ? 'bg-emerald-600 text-white shadow-md' : 'bg-gray-100 text-gray-600'"
+                                class="px-3 py-1.5 rounded-full text-sm font-medium transition"
+                            >
+                                {{ person }}
+                            </button>
+                        </div>
+                    </div>
+                    <div class="flex gap-3 mt-6">
+                        <button @click="showAddExpenseModal = false" class="flex-1 py-3 text-gray-500 font-bold bg-gray-100 rounded-xl">取消</button>
+                        <button @click="saveExpense" class="flex-1 py-3 text-white font-bold bg-emerald-600 rounded-xl shadow-lg shadow-emerald-200">儲存</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. 管理成員 Modal -->
+        <div v-if="showManagePeopleModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl">
+                <h3 class="text-xl font-bold mb-4">管理成員</h3>
+                <div class="flex gap-2 mb-4">
+                    <input type="text" v-model="newPersonName" placeholder="輸入名字" class="flex-1 bg-gray-50 border border-gray-200 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500">
+                    <button @click="addPerson" class="bg-indigo-600 text-white px-4 rounded-lg text-sm font-bold">新增</button>
+                </div>
+                <ul class="space-y-2 max-h-60 overflow-y-auto">
+                    <li v-for="(person, idx) in people" :key="idx" class="flex justify-between items-center bg-gray-50 p-3 rounded-lg">
+                        <span class="font-medium">{{ person }}</span>
+                        <!-- 至少保留一位成員 -->
+                        <button v-if="people.length > 1" @click="removePerson(idx)" class="text-red-400 hover:text-red-600"><i class="fa-solid fa-times"></i></button>
+                    </li>
+                </ul>
+                <button @click="showManagePeopleModal = false" class="w-full mt-4 py-3 bg-gray-100 font-bold text-gray-600 rounded-xl">完成</button>
+            </div>
+        </div>
+
+        <!-- 5. 結算結果 Modal -->
+        <div v-if="showSettlementModal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+            <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl">
+                <h3 class="text-xl font-bold mb-2 text-emerald-700"><i class="fa-solid fa-check-circle mr-2"></i>結算結果</h3>
+                <p class="text-xs text-gray-500 mb-4">假設所有人均分所有支出</p>
+                
+                <div v-if="debts.length > 0" class="space-y-3 mb-6">
+                    <div v-for="(debt, idx) in debts" :key="idx" class="flex items-center justify-between bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                        <div class="flex items-center gap-2">
+                            <span class="font-bold text-gray-800">{{ debt.from }}</span>
+                            <i class="fa-solid fa-arrow-right text-gray-400 text-xs"></i>
+                            <span class="font-bold text-gray-800">{{ debt.to }}</span>
+                        </div>
+                        <span class="font-bold text-emerald-600">${{ Math.round(debt.amount) }}</span>
+                    </div>
+                </div>
+                <div v-else class="text-center py-6 text-gray-400">
+                    <p>目前沒有需要結算的帳務！</p>
+                </div>
+
+                <div class="border-t pt-4">
+                    <h4 class="font-bold text-sm mb-2 text-gray-600">統計資訊</h4>
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <div v-for="(total, person) in spendingPerPerson" class="bg-gray-50 p-2 rounded">
+                            <span class="block text-gray-500">{{ person }} 先付了</span>
+                            <span class="font-bold text-gray-800">${{ total }}</span>
+                        </div>
+                    </div>
+                    <div class="mt-2 text-xs text-center text-gray-500 bg-yellow-50 p-2 rounded">
+                        平均每人應付: <span class="font-bold text-gray-800">${{ Math.round(averageExpense) }}</span>
+                    </div>
+                </div>
+
+                <button @click="showSettlementModal = false" class="w-full mt-6 py-3 bg-emerald-600 text-white font-bold rounded-xl shadow-lg shadow-emerald-200">了解</button>
+            </div>
+        </div>
+
+        <!-- 6. 通用確認視窗 (替代原生 confirm) -->
+        <div v-if="showConfirmModal" class="fixed inset-0 bg-black/50 z-[60] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-[slideUp_0.2s_ease-out]">
+                <h3 class="text-lg font-bold mb-2 text-gray-800">確認操作</h3>
+                <p class="text-gray-600 mb-6">{{ confirmMessage }}</p>
+                <div class="flex gap-3">
+                    <button @click="showConfirmModal = false" class="flex-1 py-2.5 text-gray-500 font-bold bg-gray-100 rounded-xl">取消</button>
+                    <button @click="handleConfirm" class="flex-1 py-2.5 text-white font-bold bg-red-500 rounded-xl shadow-lg shadow-red-200">確定</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 7. 通用提示視窗 (替代原生 alert) -->
+        <div v-if="showAlertModal" class="fixed inset-0 bg-black/50 z-[70] flex items-center justify-center p-4 backdrop-blur-sm">
+            <div class="bg-white w-full max-w-sm rounded-2xl p-6 shadow-2xl animate-[slideUp_0.2s_ease-out]">
+                <div class="text-center mb-4">
+                    <i class="fa-solid fa-circle-exclamation text-4xl text-yellow-400 mb-2"></i>
+                    <p class="text-gray-800 font-bold">{{ alertMessage }}</p>
+                </div>
+                <button @click="showAlertModal = false" class="w-full py-2.5 text-white font-bold bg-gray-800 rounded-xl">知道了</button>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted, watch, nextTick } = Vue;
+
+        createApp({
+            setup() {
+                // --- 狀態 State ---
+                const currentTab = ref('itinerary'); // 目前顯示的 Tab: 'itinerary', 'money', 'tools'
+                const showAddItemModal = ref(false); // 新增/編輯行程視窗
+                const showAddExpenseModal = ref(false); // 新增支出視窗
+                const showManagePeopleModal = ref(false); // 管理成員視窗
+                const showSettlementModal = ref(false); // 結算結果視窗
+                const showDaySelectorModal = ref(false); // 快速跳轉/批量新增視窗
+                const dayContainer = ref(null); // 用於滾動到最新一天的 DOM 參考
+                
+                // 行程批量操作狀態
+                const jumpDayInput = ref(''); // 跳轉天數輸入
+                const daysToAddInput = ref(''); // 批量新增天數輸入
+
+                // 通用 UI 狀態 (取代原生 alert/confirm)
+                const showConfirmModal = ref(false);
+                const confirmMessage = ref('');
+                const confirmCallback = ref(null);
+                const showAlertModal = ref(false);
+                const alertMessage = ref('');
+                
+                // 行程資料 (預設兩天)
+                const itineraryDays = ref([
+                    [], 
+                    [], 
+                ]);
+                const currentDayIndex = ref(0); // 目前顯示第幾天 (0-based index)
+                
+                // 帳務資料 (預設兩位成員)
+                const people = ref(['我', '朋友A']);
+                const newPersonName = ref('');
+                const expenses = ref([]);
+
+                // 編輯/新增 暫存區
+                const isEditing = ref(false);
+                const tempItem = ref({ id: null, time: '09:00', title: '', location: '' });
+                const tempExpense = ref({ title: '', amount: '', payer: '', date: '' });
+
+                // --- 載入與儲存 (資料持久化) ---
+                const loadData = () => {
+                    // 從 localStorage 載入資料
+                    const savedItinerary = localStorage.getItem('travel_itinerary');
+                    const savedExpenses = localStorage.getItem('travel_expenses');
+                    const savedPeople = localStorage.getItem('travel_people');
+                    
+                    if (savedItinerary) itineraryDays.value = JSON.parse(savedItinerary);
+                    if (savedExpenses) expenses.value = JSON.parse(savedExpenses);
+                    if (savedPeople) people.value = JSON.parse(savedPeople);
+                };
+
+                const saveData = () => {
+                    // 將資料儲存到 localStorage
+                    localStorage.setItem('travel_itinerary', JSON.stringify(itineraryDays.value));
+                    localStorage.setItem('travel_expenses', JSON.stringify(expenses.value));
+                    localStorage.setItem('travel_people', JSON.stringify(people.value));
+                };
+
+                const resetData = () => {
+                    // 清除所有資料並重整頁面
+                    triggerConfirm('確定要清除所有資料嗎？無法復原喔！', () => {
+                        localStorage.clear();
+                        location.reload();
+                    });
+                }
+
+                // 監聽資料變化並自動儲存
+                watch([itineraryDays, expenses, people], saveData, { deep: true });
+                
+                onMounted(() => {
+                    loadData();
+                });
+
+                // --- 通用 UI 邏輯 ---
+                const triggerConfirm = (msg, callback) => {
+                    // 觸發自訂確認視窗
+                    confirmMessage.value = msg;
+                    confirmCallback.value = callback;
+                    showConfirmModal.value = true;
+                };
+
+                const handleConfirm = () => {
+                    // 處理確認視窗的「確定」
+                    if (confirmCallback.value) confirmCallback.value();
+                    showConfirmModal.value = false;
+                };
+
+                const triggerAlert = (msg) => {
+                    // 觸發自訂提示視窗
+                    alertMessage.value = msg;
+                    showAlertModal.value = true;
+                };
+
+                // --- 行程管理邏輯 ---
+                const currentDayItems = computed(() => {
+                    // 取得當天行程並按時間排序
+                    const dayItems = itineraryDays.value[currentDayIndex.value] || [];
+                    return [...dayItems].sort((a, b) => a.time.localeCompare(b.time));
+                });
+
+                const addDay = async () => {
+                    // 單日新增
+                    itineraryDays.value.push([]);
+                    currentDayIndex.value = itineraryDays.value.length - 1;
+                    
+                    // 等待 DOM 更新後，滾動到最右邊
+                    await nextTick();
+                    if (dayContainer.value) {
+                        dayContainer.value.scrollLeft = dayContainer.value.scrollWidth;
+                    }
+                };
+
+                const addMultipleDays = async () => {
+                    // 批量新增天數
+                    const count = parseInt(daysToAddInput.value);
+                    if (!count || count <= 0) return triggerAlert('請輸入有效的天數！');
+                    
+                    if (count > 100) return triggerAlert('為了效能考量，一次最多新增 100 天喔！');
+
+                    for(let i = 0; i < count; i++) {
+                        itineraryDays.value.push([]);
+                    }
+                    
+                    daysToAddInput.value = '';
+                    triggerAlert(`成功新增 ${count} 天！`);
+                    
+                    // 自動跳轉到最新的一天
+                    currentDayIndex.value = itineraryDays.value.length - 1;
+                };
+
+                const jumpToDay = () => {
+                    // 跳轉到指定天數
+                    const dayNum = parseInt(jumpDayInput.value);
+                    if (!dayNum) return;
+                    
+                    if (dayNum < 1 || dayNum > itineraryDays.value.length) {
+                        return triggerAlert(`找不到第 ${dayNum} 天，目前只有 ${itineraryDays.value.length} 天喔！`);
+                    }
+
+                    currentDayIndex.value = dayNum - 1;
+                    showDaySelectorModal.value = false;
+                    jumpDayInput.value = '';
+                };
+
+                const selectDay = (index) => {
+                    // 從總覽網格選擇天數
+                    currentDayIndex.value = index;
+                    showDaySelectorModal.value = false; 
+                };
+
+                const openAddModal = () => {
+                    isEditing.value = false;
+                    tempItem.value = { id: Date.now(), time: '09:00', title: '', location: '' };
+                    showAddItemModal.value = true;
+                };
+
+                const editItem = (item) => {
+                    isEditing.value = true;
+                    // 使用淺拷貝以避免直接修改原始數據
+                    tempItem.value = { ...item }; 
+                    showAddItemModal.value = true;
+                };
+
+                const saveItem = () => {
+                    if (!tempItem.value.title) return triggerAlert('請輸入行程標題！');
+                    
+                    const dayList = itineraryDays.value[currentDayIndex.value];
+                    
+                    if (isEditing.value) {
+                        // 編輯現有行程
+                        const idx = dayList.findIndex(i => i.id === tempItem.value.id);
+                        if (idx !== -1) dayList[idx] = { ...tempItem.value };
+                    } else {
+                        // 新增行程
+                        dayList.push({ ...tempItem.value });
+                    }
+                    
+                    closeModal();
+                };
+
+                const deleteItem = (id) => {
+                    // 刪除行程
+                    triggerConfirm('確定要刪除這個行程嗎？', () => {
+                        const dayList = itineraryDays.value[currentDayIndex.value];
+                        const idx = dayList.findIndex(i => i.id === id);
+                        if (idx !== -1) {
+                            dayList.splice(idx, 1);
+                        }
+                    });
+                };
+
+                const closeModal = () => {
+                    showAddItemModal.value = false;
+                };
+
+                const openMap = (location) => {
+                    // 導航功能：使用 Google Maps 搜尋連結
+                    if (!location) return triggerAlert('請先為此行程填寫地點名稱！');
+                    window.open(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`, '_blank');
+                };
+                
+                // --- 帳務管理邏輯 (分帳系統) ---
+                const sortedExpenses = computed(() => {
+                    // 按日期倒序排序支出
+                    return [...expenses.value].sort((a, b) => new Date(b.date) - new Date(a.date));
+                });
+
+                const totalExpense = computed(() => {
+                    // 計算所有費用的總和
+                    return expenses.value.reduce((sum, item) => sum + Number(item.amount), 0);
+                });
+
+                const addPerson = () => {
+                    // 新增成員
+                    if (newPersonName.value && !people.value.includes(newPersonName.value)) {
+                        people.value.push(newPersonName.value);
+                        newPersonName.value = '';
+                    }
+                };
+
+                const removePerson = (idx) => {
+                    // 移除成員
+                    people.value.splice(idx, 1);
+                };
+
+                const openAddExpenseModal = () => {
+                    // 打開新增支出視窗，預設付款人為第一位成員
+                    tempExpense.value = { 
+                        title: '', 
+                        amount: '', 
+                        payer: people.value[0], 
+                        date: new Date().toISOString().split('T')[0] // 記錄今天日期
+                    };
+                    showAddExpenseModal.value = true;
+                };
+
+                const saveExpense = () => {
+                    // 儲存支出
+                    if (!tempExpense.value.title || !tempExpense.value.amount) return triggerAlert('請輸入完整的項目與金額！');
+                    expenses.value.push({
+                        id: Date.now(),
+                        ...tempExpense.value
+                    });
+                    showAddExpenseModal.value = false;
+                };
+
+                const deleteExpense = (id) => {
+                    // 刪除支出
+                    triggerConfirm('確定要刪除這筆款項嗎？', () => {
+                        const idx = expenses.value.findIndex(e => e.id === id);
+                        if (idx !== -1) expenses.value.splice(idx, 1);
+                    });
+                };
+
+                const formatDate = (dateStr) => {
+                    // 格式化日期顯示
+                    return dateStr.replace(/-/g, '/');
+                };
+
+                // --- 複雜的分帳演算法 (核心結算) ---
+                const spendingPerPerson = computed(() => {
+                    // 計算每人預先支付的總額 (誰先付了多少)
+                    const dict = {};
+                    people.value.forEach(p => dict[p] = 0);
+                    expenses.value.forEach(e => {
+                        if (dict[e.payer] !== undefined) {
+                            dict[e.payer] += Number(e.amount);
+                        }
+                    });
+                    return dict;
+                });
+
+                const averageExpense = computed(() => {
+                    // 計算平均每人應付金額
+                    return totalExpense.value / (people.value.length || 1);
+                });
+
+                const debts = computed(() => {
+                    // 結算演算法：找出誰欠誰錢，並以最少交易次數達成平衡
+                    if (people.value.length < 2 || expenses.value.length === 0) return [];
+
+                    let balances = {};
+                    const avg = averageExpense.value;
+                    
+                    people.value.forEach(p => {
+                        // 餘額 = (已付金額) - (應付金額)
+                        balances[p] = (spendingPerPerson.value[p] || 0) - avg;
+                    });
+
+                    // 分離債務人 (負數，欠錢) 和 債權人 (正數，多付錢)
+                    let debtors = [];
+                    let creditors = [];
+
+                    for (const [person, amount] of Object.entries(balances)) {
+                        // 使用 0.01 避免浮點數誤差
+                        if (amount < -0.01) debtors.push({ person, amount }); 
+                        if (amount > 0.01) creditors.push({ person, amount }); 
+                    }
+
+                    // 排序：債務人從欠款最多開始；債權人從預付最多開始
+                    debtors.sort((a, b) => a.amount - b.amount); 
+                    creditors.sort((a, b) => b.amount - a.amount); 
+
+                    const result = [];
+                    let i = 0; // index for debtors
+                    let j = 0; // index for creditors
+
+                    while (i < debtors.length && j < creditors.length) {
+                        let debtor = debtors[i];
+                        let creditor = creditors[j];
+
+                        // 取兩者絕對值較小者作為這次還款金額 (Max(還款人能還的), Min(收款人能收的))
+                        let amount = Math.min(Math.abs(debtor.amount), creditor.amount);
+                        
+                        result.push({
+                            from: debtor.person,
+                            to: creditor.person,
+                            amount: amount
+                        });
+
+                        // 更新餘額
+                        debtor.amount += amount;
+                        creditor.amount -= amount;
+
+                        // 如果某方結清了，移動指標 (容許微小的浮點誤差)
+                        if (Math.abs(debtor.amount) < 0.01) i++;
+                        if (creditor.amount < 0.01) j++;
+                    }
+
+                    return result;
+                });
+
+
+                return {
+                    // 狀態與 Tab 切換
+                    currentTab,
+                    showAddItemModal, showAddExpenseModal, showManagePeopleModal, showSettlementModal,
+                    showDaySelectorModal, showConfirmModal, confirmMessage, showAlertModal, alertMessage,
+                    
+                    // 行程資料與操作
+                    itineraryDays, currentDayIndex, currentDayItems, dayContainer,
+                    jumpDayInput, daysToAddInput, isEditing, tempItem,
+                    addDay, addMultipleDays, jumpToDay, selectDay,
+                    openAddModal, closeModal, saveItem, editItem, deleteItem, openMap,
+
+                    // 帳務資料與操作
+                    tempExpense, people, newPersonName, expenses,
+                    sortedExpenses, totalExpense, spendingPerPerson, averageExpense, debts,
+                    addPerson, removePerson, openAddExpenseModal, saveExpense, deleteExpense,
+                    formatDate, resetData, handleConfirm 
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
